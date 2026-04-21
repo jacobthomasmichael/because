@@ -2,12 +2,12 @@ from __future__ import annotations
 
 import sys
 import time
-import traceback
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from typing import Iterator, Type
 
 from because.buffer import Op, OpType, get_context, record
+from because.patterns.base import PatternMatch
 
 
 @dataclass(slots=True)
@@ -21,14 +21,16 @@ class SwallowedExc:
 class ContextChain:
     operations: list[Op]
     swallowed: list[SwallowedExc] = field(default_factory=list)
+    pattern_matches: list[PatternMatch] = field(default_factory=list)
 
 
 def enrich(exc: BaseException) -> BaseException:
-    """Snapshot current context and attach as __context_chain__. Idempotent."""
+    """Snapshot current context, run patterns, attach as __context_chain__. Idempotent."""
     if not hasattr(exc, "__context_chain__"):
-        exc.__context_chain__ = ContextChain(  # type: ignore[attr-defined]
-            operations=get_context().snapshot(),
-        )
+        from because.patterns import match_all
+        chain = ContextChain(operations=get_context().snapshot())
+        chain.pattern_matches = match_all(exc, chain)
+        exc.__context_chain__ = chain  # type: ignore[attr-defined]
     return exc
 
 
@@ -38,6 +40,13 @@ def format_context_chain(exc: BaseException) -> str:
         return ""
 
     lines = ["", "[because context]"]
+
+    if chain.pattern_matches:
+        for m in chain.pattern_matches:
+            label = "Likely cause" if m.confidence == "likely_cause" else "Contributing factor"
+            lines.append(f"  {label}: {m.description}")
+            for ev in m.evidence:
+                lines.append(f"    • {ev}")
 
     if chain.swallowed:
         lines.append(f"  Caught-and-swallowed ({len(chain.swallowed)}):")
@@ -131,9 +140,11 @@ def _note_swallowed(buf, exc: BaseException) -> None:
 
 
 def enrich_with_swallowed(exc: BaseException) -> BaseException:
-    """Like enrich() but also pulls in recorded swallowed exceptions."""
+    """Like enrich() but also pulls in recorded swallowed exceptions, then re-runs patterns."""
     enrich(exc)
+    from because.patterns import match_all
     buf = get_context()
     chain: ContextChain = exc.__context_chain__  # type: ignore[attr-defined]
     chain.swallowed = list(getattr(buf, "_swallowed", []))
+    chain.pattern_matches = match_all(exc, chain)
     return exc
