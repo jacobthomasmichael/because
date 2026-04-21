@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from typing import TYPE_CHECKING
 
 from because.buffer import OpType
@@ -42,12 +43,27 @@ def match(exc: BaseException, chain: "ContextChain") -> PatternMatch | None:
             msg = op.metadata.get("message", "")[:80]
             evidence.append(f"Swallowed in context: {exc_type}: {msg}")
 
-    if upstream_hits:
+    # also check messages for upstream keywords when types are generic
+    upstream_keywords = re.compile(
+        r"(connection|timeout|refused|pool|operational|broken pipe|reset|eof|closed)",
+        re.IGNORECASE,
+    )
+    message_hits = []
+    for s in explicit_swallowed:
+        if upstream_keywords.search(s.message):
+            message_hits.append(s.exc_type)
+    for op in swallowed_ops:
+        msg = op.metadata.get("message", "")
+        if upstream_keywords.search(msg):
+            message_hits.append(op.metadata.get("exc_type", ""))
+
+    if upstream_hits or message_hits:
+        signal_types = set(upstream_hits + message_hits) - {""}
         evidence.append(
-            f"Swallowed exception type(s) suggest upstream failure: {', '.join(set(upstream_hits))}"
+            f"Swallowed exception content suggests upstream failure: {', '.join(signal_types)}"
         )
 
-    confidence = "likely_cause" if upstream_hits else "contributing_factor"
+    confidence = "likely_cause" if (upstream_hits or message_hits) else "contributing_factor"
 
     return PatternMatch(
         name="silent_failure",
