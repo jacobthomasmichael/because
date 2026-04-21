@@ -1,3 +1,20 @@
-from because.buffer import install, get_context
+from because.buffer import get_context
+from because.enrichment import catch, enrich, enrich_with_swallowed, format_context_chain
+from because.enrichment import install as _install_enrichment
+from because.buffer import install as _install_buffer
 
-__all__ = ["install", "get_context"]
+
+def install(buffer_size: int = 128) -> None:
+    """Zero-config setup. Call once at process startup."""
+    _install_buffer(buffer_size)
+    _install_enrichment()
+
+
+__all__ = [
+    "install",
+    "get_context",
+    "enrich",
+    "enrich_with_swallowed",
+    "format_context_chain",
+    "catch",
+]
