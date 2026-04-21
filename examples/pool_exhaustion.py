@@ -35,9 +35,10 @@ because.install()
 from sqlalchemy import Column, Integer, String, create_engine, text
 from sqlalchemy.orm import DeclarativeBase, Session
 
-# Tight pool: size 2, no overflow — easy to exhaust
+# Tight pool: size 2, no overflow — easy to exhaust.
+# Named temp file (not :memory:) so multiple threads share the same DB.
 engine = create_engine(
-    "sqlite:///file::memory:?cache=shared",
+    "sqlite:////tmp/because_pool_demo.db",
     connect_args={"check_same_thread": False},
     pool_size=2,
     max_overflow=0,

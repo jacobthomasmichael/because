@@ -16,3 +16,7 @@ env/
 .ruff_cache/
 
 *.so
+
+# SQLite databases created by examples
+*.db
+file::memory:*
