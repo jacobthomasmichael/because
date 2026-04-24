@@ -38,6 +38,8 @@ httpx = ["httpx>=0.23"]
 redis = ["redis>=4.0"]
 fastapi = ["fastapi>=0.95", "starlette>=0.27"]
 flask = ["flask>=3.0"]
+llm = ["anthropic>=0.25"]
+openai = ["openai>=1.0"]
 all = [
     "sqlalchemy>=1.4",
     "requests>=2.0",
