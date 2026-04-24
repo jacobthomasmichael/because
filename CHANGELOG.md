@@ -4,6 +4,13 @@ All notable changes to `because-py` are documented here.
 
 ---
 
+## [0.2.13] — 2026-04-24
+
+### Changed
+- Added author LinkedIn URL to project metadata.
+
+---
+
 ## [0.2.12] — 2026-04-24
 
 ### Added

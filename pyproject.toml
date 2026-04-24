@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "because-py"
-version = "0.2.12"
+version = "0.2.13"
 description = "Enriches exceptions with plain-English causal chains at throw time"
 readme = "README.md"
 license = { text = "MIT" }
@@ -36,6 +36,7 @@ because = "because.pytest_plugin"
 Homepage = "https://github.com/jacobthomasmichael/because"
 Repository = "https://github.com/jacobthomasmichael/because"
 "Bug Tracker" = "https://github.com/jacobthomasmichael/because/issues"
+Author = "https://linkedin.com/in/jacobthomasmichael"
 
 [project.optional-dependencies]
 sqlalchemy = ["sqlalchemy>=1.4"]
