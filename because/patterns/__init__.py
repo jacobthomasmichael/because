@@ -2,13 +2,13 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from because.patterns import pool_exhaustion, silent_failure
+from because.patterns import pool_exhaustion, retry_storm, silent_failure
 from because.patterns.base import PatternMatch
 
 if TYPE_CHECKING:
     from because.enrichment import ContextChain
 
-_PATTERNS = [pool_exhaustion, silent_failure]
+_PATTERNS = [pool_exhaustion, silent_failure, retry_storm]
 
 
 def match_all(exc: BaseException, chain: "ContextChain") -> list[PatternMatch]:
