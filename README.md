@@ -50,14 +50,21 @@ ConnectionError: connection refused on localhost:5432
 ## Install
 
 ```bash
-pip install because
+pip install because-py
 ```
 
 With instrumentation extras:
 
 ```bash
-pip install "because[sqlalchemy]"
-pip install "because[sqlalchemy,requests]"
+pip install "because-py[sqlalchemy]"
+pip install "because-py[sqlalchemy,requests,httpx]"
+```
+
+With the LLM explainer:
+
+```bash
+pip install "because-py[llm]"        # Anthropic (default)
+pip install "because-py[llm,openai]" # + OpenAI support
 ```
 
 ---
@@ -80,13 +87,39 @@ That's it. `because` hooks `sys.excepthook` and starts recording operations in t
 ```python
 from because.instruments.sqlalchemy import instrument as instrument_sa
 from because.instruments.requests import instrument as instrument_requests
+from because.instruments.httpx import instrument as instrument_httpx
+from because.instruments.redis import instrument as instrument_redis
+from because.instruments.logging import instrument as instrument_logging
 import requests
 
-instrument_sa(engine)          # your SQLAlchemy engine
-instrument_requests(requests.Session())
+instrument_sa(engine)                  # SQLAlchemy engine
+instrument_requests(requests.Session()) # requests Session
+instrument_httpx(httpx_client)         # httpx Client or AsyncClient
+instrument_redis(redis_client)         # redis-py client (sync or async)
+instrument_logging()                   # root logger (WARNING and above)
 ```
 
 Each instrument records operation timing, success/failure, and relevant metadata into a per-thread/per-task ring buffer. Zero I/O on the hot path.
+
+---
+
+## Framework integrations
+
+```python
+# Flask
+from because.integrations.flask import instrument as instrument_flask
+instrument_flask(app)
+
+# FastAPI
+from because.integrations.fastapi import BecauseMiddleware
+app.add_middleware(BecauseMiddleware)
+
+# Django — add to MIDDLEWARE in settings.py
+MIDDLEWARE = [
+    "because.integrations.django.BecauseMiddleware",
+    ...
+]
+```
 
 ---
 
@@ -122,16 +155,75 @@ except Exception as exc:
 
 ---
 
-## Heuristic patterns (v0)
+## LLM-based explanation (v0.2)
 
-`because` ships with a starter set of deterministic cascade patterns:
+Get a plain-English root cause analysis powered by Claude or GPT-4o:
+
+```python
+import because
+
+because.configure_llm(api_key="sk-ant-...")  # Anthropic by default
+
+try:
+    risky_operation()
+except Exception as exc:
+    because.enrich_with_swallowed(exc)
+    explanation = await because.explain_async(exc)
+    print(explanation.root_cause)
+    print(explanation.suggested_fix)
+```
+
+Sync version (avoid in async contexts):
+
+```python
+explanation = because.explain(exc)
+```
+
+Use OpenAI instead:
+
+```python
+because.configure_llm(api_key="sk-...", provider="openai")
+```
+
+Bring your own provider by implementing the `LLMProvider` protocol:
+
+```python
+class MyProvider:
+    async def complete(self, prompt: str) -> str:
+        ...
+```
+
+---
+
+## Heuristic patterns
+
+`because` ships with deterministic cascade patterns that run at throw time — no API key required:
 
 | Pattern | Fires when |
 |---|---|
 | `pool_exhaustion` | Connection/pool error + recent DB activity or explicit pool message |
 | `silent_failure` | Swallowed exception preceded the current error |
+| `retry_storm` | Timeout + high concentration of repeated HTTP requests to the same host |
 
 Each pattern is a small, independently testable unit. Output always uses hedged language ("likely cause", "contributing factor") — `because` never claims certainty.
+
+---
+
+## Observability integrations
+
+```python
+# Sentry
+from because.integrations.sentry import before_send
+sentry_sdk.init(..., before_send=before_send)
+
+# Datadog
+from because.integrations.datadog import tag_current_span
+tag_current_span(exc)
+
+# Structured logging
+from because.integrations.logging import BecauseFormatter
+handler.setFormatter(BecauseFormatter())
+```
 
 ---
 
@@ -160,8 +252,6 @@ Each demo shows the cascade being triggered and `because` surfacing the cause.
 
 ## Roadmap
 
-- **v0.2** — Optional LLM-based explanation (async, deferred, BYO API key)
 - **v1.0** — Cross-process / cross-service causal reasoning
-- More instruments: `httpx`, `redis-py`, `logging`, stdlib `socket`
-- Framework middleware: Flask, FastAPI, Django
-- Sentry / Datadog / OpenTelemetry integration helpers
+- More instruments: stdlib `socket`, `grpc`
+- OpenTelemetry span export
