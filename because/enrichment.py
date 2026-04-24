@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+import asyncio
+import functools
 import sys
 import time
 from contextlib import contextmanager
 from dataclasses import dataclass, field
-from typing import Iterator, Type
+from typing import Any, Callable, Iterator, Type, TypeVar, overload
+
+_F = TypeVar("_F", bound=Callable[..., Any])
 
 from because.buffer import Op, OpType, get_context, record
 from because.patterns.base import PatternMatch
@@ -137,6 +141,61 @@ def _note_swallowed(buf, exc: BaseException) -> None:
     if not hasattr(buf, "_swallowed"):
         buf._swallowed: list[SwallowedExc] = []
     buf._swallowed.append(swallowed)
+
+
+@overload
+def watch(__fn: _F) -> _F: ...
+@overload
+def watch(*, reraise: bool = True) -> Callable[[_F], _F]: ...
+
+def watch(__fn: _F | None = None, *, reraise: bool = True) -> Any:
+    """Decorator that auto-enriches any exception escaping the function.
+
+    Works on both sync and async functions. Supports bare ``@because.watch``
+    and parameterised ``@because.watch(reraise=False)`` forms.
+
+    Args:
+        reraise: If True (default), re-raises the exception after enriching.
+                 If False, swallows it — useful for fire-and-forget tasks where
+                 you want context captured but don't want the caller to crash.
+
+    Usage::
+
+        @because.watch
+        def process_order(order_id):
+            ...
+
+        @because.watch(reraise=False)
+        async def background_sync():
+            ...
+    """
+    def decorator(fn: _F) -> _F:
+        if asyncio.iscoroutinefunction(fn):
+            @functools.wraps(fn)
+            async def async_wrapper(*args: Any, **kwargs: Any) -> Any:
+                try:
+                    return await fn(*args, **kwargs)
+                except BaseException as exc:
+                    enrich_with_swallowed(exc)
+                    if reraise:
+                        raise
+                    return None
+            return async_wrapper  # type: ignore[return-value]
+        else:
+            @functools.wraps(fn)
+            def sync_wrapper(*args: Any, **kwargs: Any) -> Any:
+                try:
+                    return fn(*args, **kwargs)
+                except BaseException as exc:
+                    enrich_with_swallowed(exc)
+                    if reraise:
+                        raise
+                    return None
+            return sync_wrapper  # type: ignore[return-value]
+
+    if __fn is not None:
+        return decorator(__fn)
+    return decorator
 
 
 def enrich_with_swallowed(exc: BaseException) -> BaseException:

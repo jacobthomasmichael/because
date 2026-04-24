@@ -102,6 +102,30 @@ All instruments write to a bounded ring buffer — **zero I/O on the hot path**.
 
 ---
 
+## Zero-boilerplate enrichment with `@because.watch`
+
+The easiest way to enrich exceptions — just decorate the function:
+
+```python
+@because.watch
+def process_order(order_id):
+    ...  # any exception that escapes gets auto-enriched
+
+@because.watch
+async def fetch_user(user_id):
+    ...  # works on async functions too
+```
+
+Use `reraise=False` for background tasks where you want context captured but don't want the caller to crash:
+
+```python
+@because.watch(reraise=False)
+async def background_sync():
+    ...  # exception is enriched and swallowed
+```
+
+---
+
 ## Recording swallowed exceptions
 
 Silently caught exceptions are often the real cause of a downstream crash. `because.catch()` makes them visible:

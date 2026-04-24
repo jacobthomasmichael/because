@@ -1,5 +1,5 @@
 from because.buffer import get_context
-from because.enrichment import catch, enrich, enrich_with_swallowed, format_context_chain
+from because.enrichment import catch, enrich, enrich_with_swallowed, format_context_chain, watch
 from because.enrichment import install as _install_enrichment
 from because.buffer import install as _install_buffer
 from because.explainer import (
@@ -26,6 +26,7 @@ __all__ = [
     "enrich_with_swallowed",
     "format_context_chain",
     "catch",
+    "watch",
     # LLM explainer
     "Explanation",
     "AnthropicProvider",
