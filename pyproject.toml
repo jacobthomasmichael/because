@@ -29,6 +29,9 @@ dependencies = []
 [project.scripts]
 because = "because.cli:main"
 
+[project.entry-points."pytest11"]
+because = "because.pytest_plugin"
+
 [project.urls]
 Homepage = "https://github.com/jacobthomasmichael/because"
 Repository = "https://github.com/jacobthomasmichael/because"
