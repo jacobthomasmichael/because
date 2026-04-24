@@ -42,6 +42,7 @@ redis = ["redis>=4.0"]
 fastapi = ["fastapi>=0.95", "starlette>=0.27"]
 flask = ["flask>=3.0"]
 llm = ["anthropic>=0.25"]
+otel = ["opentelemetry-api>=1.0"]
 openai = ["openai>=1.0"]
 all = [
     "sqlalchemy>=1.4",

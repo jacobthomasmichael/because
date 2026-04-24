@@ -252,9 +252,24 @@ sentry_sdk.init(..., before_send=before_send)
 from because.integrations.datadog import tag_current_span
 tag_current_span(exc)
 
+# OpenTelemetry: tag the current span and add span events per operation
+from because.integrations.otel import tag_current_span
+tag_current_span(exc)
+
+# OpenTelemetry: emit each operation as a child span (detailed tracing)
+from because.integrations.otel import record_spans
+from opentelemetry import trace
+record_spans(trace.get_tracer("because"), exc)
+
 # Structured logging: emit because context as a JSON field
 from because.integrations.logging import BecauseFormatter
 handler.setFormatter(BecauseFormatter())
+```
+
+Install the OTel extra:
+
+```bash
+pip install "because-py[otel]"
 ```
 
 ---
