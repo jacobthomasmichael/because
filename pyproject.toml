@@ -23,6 +23,9 @@ dev = [
     "requests>=2.0",
     "httpx>=0.23",
     "fakeredis>=2.0",
+    "flask>=3.0",
+    "fastapi>=0.95",
+    "starlette>=0.27",
 ]
 
 [tool.pytest.ini_options]
