@@ -58,6 +58,7 @@ With instrumentation extras:
 ```bash
 pip install "because-py[sqlalchemy]"
 pip install "because-py[sqlalchemy,requests,httpx,redis]"
+pip install "because-py[grpc]"
 ```
 
 With the LLM explainer (Claude or GPT-4o):
@@ -65,6 +66,12 @@ With the LLM explainer (Claude or GPT-4o):
 ```bash
 pip install "because-py[llm]"         # Anthropic
 pip install "because-py[llm,openai]"  # + OpenAI
+```
+
+With OpenTelemetry export:
+
+```bash
+pip install "because-py[otel]"
 ```
 
 ---
@@ -90,12 +97,16 @@ from because.instruments.requests import instrument as instrument_requests
 from because.instruments.httpx import instrument as instrument_httpx
 from because.instruments.redis import instrument as instrument_redis
 from because.instruments.logging import instrument as instrument_logging
+from because.instruments.socket import instrument as instrument_socket
+from because.instruments.grpc import instrument as instrument_grpc
 
 instrument_sa(engine)                   # SQLAlchemy engine
 instrument_requests(requests.Session()) # requests Session
 instrument_httpx(client)                # httpx Client or AsyncClient
 instrument_redis(redis_client)          # redis-py (sync or async)
 instrument_logging()                    # root logger, WARNING and above
+instrument_socket()                     # raw TCP connect / connect_ex
+instrument_grpc(channel)                # gRPC channel (sync or async)
 ```
 
 All instruments write to a bounded ring buffer — **zero I/O on the hot path**.
@@ -126,6 +137,27 @@ async def background_sync():
 
 ---
 
+## Async context propagation
+
+By default, `asyncio` tasks get isolated ring buffers — ops recorded in subtasks don't roll up to the parent. Use `because.gather()` and `because.create_task()` as drop-in replacements to merge child buffers back automatically:
+
+```python
+# Drop-in for asyncio.gather()
+results = await because.gather(
+    fetch_user(user_id),
+    fetch_inventory(item_id),
+    query_db(),
+)
+
+# Drop-in for asyncio.create_task()
+task = because.create_task(fetch_user(user_id))
+result = await task
+```
+
+Both merge child ops back into the parent buffer on completion, sorted by timestamp. `return_exceptions=True` and task naming are fully supported.
+
+---
+
 ## Recording swallowed exceptions
 
 Silently caught exceptions are often the real cause of a downstream crash. `because.catch()` makes them visible:
@@ -153,6 +185,12 @@ except Exception as exc:
 ```
 
 `__context_chain__` serializes cleanly into Sentry `extra`, Datadog span tags, or structured log fields.
+
+Filter the output to a time window to cut noise on long-running requests:
+
+```python
+print(because.format_context_chain(exc, within_seconds=30))
+```
 
 ---
 
@@ -223,7 +261,12 @@ because explain
 
 # use OpenAI
 because explain --provider openai --model gpt-4o error.log
+
+# print the most recent explanation stored by any because explain call
+because last
 ```
+
+`because last` works across both the CLI and in-process `explain_async()` calls — every explanation is persisted automatically so you can review it any time without re-running the LLM.
 
 Example output:
 
@@ -240,6 +283,27 @@ holding connections open.
 ```
 
 Reads `ANTHROPIC_API_KEY` or `OPENAI_API_KEY` from the environment, or pass `--api-key` directly.
+
+---
+
+## pytest plugin
+
+Install `because-py` and your failing tests automatically get a `because` context section — no config required:
+
+```
+FAILED tests/test_checkout.py::test_checkout_under_load
+
+─────────────────────────────── because ───────────────────────────────
+[because context]
+  Likely cause: Database connection pool may be exhausted
+    • 8/10 recent DB queries failed (80% failure rate)
+  Recent operations (10):
+    [ok]   db_query   2.1ms  SELECT * FROM orders WHERE user_id = ?
+    [FAIL] db_query   0.5ms  error=OperationalError
+    ...
+```
+
+Disable per-test with `@pytest.mark.because_off` or globally with `--no-because`.
 
 ---
 
@@ -290,12 +354,6 @@ from because.integrations.logging import BecauseFormatter
 handler.setFormatter(BecauseFormatter())
 ```
 
-Install the OTel extra:
-
-```bash
-pip install "because-py[otel]"
-```
-
 ---
 
 ## Heuristic patterns
@@ -304,7 +362,7 @@ Pattern matching runs at throw time — no API key, no latency:
 
 | Pattern | Fires when |
 |---|---|
-| `pool_exhaustion` | Connection/pool error + recent DB failures or explicit pool message |
+| `pool_exhaustion` | DB or HTTP connection pool error + recent failures or explicit pool message |
 | `silent_failure` | A swallowed exception preceded the current error |
 | `retry_storm` | Timeout + high concentration of repeated HTTP requests to the same host |
 
@@ -338,5 +396,5 @@ python examples/llm_explainer.py
 ## Roadmap
 
 - **v1.0** — Cross-process / cross-service causal reasoning
-- More instruments: stdlib `socket`, `grpc`
-- OpenTelemetry span export
+- Local web dashboard for browsing context chains visually
+- Node.js / TypeScript port

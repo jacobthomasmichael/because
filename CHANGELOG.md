@@ -4,6 +4,46 @@ All notable changes to `because-py` are documented here.
 
 ---
 
+## [0.2.9] — 2026-04-24
+
+### Added
+- `because.create_task()`: drop-in for `asyncio.create_task()` that merges child task ring buffers back into the parent on completion via done callback. `merge_on_done=False` opt-out for fire-and-forget tasks.
+
+---
+
+## [0.2.8] — 2026-04-24
+
+### Added
+- `because last` CLI subcommand: prints the most recent explanation stored by any `because explain` or `explain_async()` call. Explanations are persisted to a temp file automatically.
+
+---
+
+## [0.2.7] — 2026-04-24
+
+### Added
+- gRPC instrument (`because.instruments.grpc`): wraps `grpc.Channel` and `grpc.aio.Channel`, recording all four RPC types (unary/stream combos). Adds `because-py[grpc]` extra.
+
+---
+
+## [0.2.6] — 2026-04-24
+
+### Added
+- `because.gather()`: drop-in for `asyncio.gather()` that merges child task ring buffers back into the parent context after all tasks complete, sorted by timestamp.
+- `pool_exhaustion` pattern extended to HTTP connection pools: fires on `urllib3`, `httpx`, and `Max retries exceeded` messages. Description adapts to say "HTTP connection pool" vs "database connection pool".
+- `format_context_chain(exc, within_seconds=30)`: filter the operation list to a time window. Label in output shows the window used.
+
+---
+
+## [0.2.5] — 2026-04-24
+
+### Added
+- pytest plugin (`because.pytest_plugin`): auto-registered via `pytest11` entry point. Appends `because` context section to failing test reports. Supports `--no-because` flag and `@pytest.mark.because_off` per-test opt-out.
+- `@because.watch` decorator: zero-boilerplate enrichment for sync and async functions. Supports bare `@because.watch` and parameterised `@because.watch(reraise=False)` forms.
+- Hypothesis property-based tests for all three pattern matchers (183 tests at time of release).
+- `CHANGELOG.md`.
+
+---
+
 ## [0.2.4] — 2026-04-24
 
 ### Added
