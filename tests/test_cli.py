@@ -1,11 +1,15 @@
 """Tests for the because CLI — all mocked, no real API calls."""
 import asyncio
+import json
 import sys
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from because.cli import _build_cli_prompt, main, _run_explain
+from because.cli import (
+    _build_cli_prompt, main, _run_explain, _run_last,
+    save_last_explanation, load_last_explanation, _STORE_PATH,
+)
 
 
 # ── _build_cli_prompt ─────────────────────────────────────────────────────────
@@ -184,3 +188,75 @@ def test_main_explain_subcommand_dispatches(tmp_path):
             with pytest.raises(SystemExit) as exc_info:
                 main()
     assert exc_info.value.code == 0
+
+
+# ── last subcommand ───────────────────────────────────────────────────────────
+
+def test_save_and_load_last_explanation():
+    explanation = MagicMock()
+    explanation.root_cause = "The pool was exhausted."
+    explanation.contributing_factors = ["Too many connections"]
+    explanation.suggested_fix = "Increase pool size."
+    explanation.confidence = "high"
+
+    save_last_explanation(explanation)
+    data = load_last_explanation()
+
+    assert data is not None
+    assert data["root_cause"] == "The pool was exhausted."
+    assert data["confidence"] == "high"
+    assert data["contributing_factors"] == ["Too many connections"]
+
+
+def test_run_last_prints_stored_explanation(capsys):
+    explanation = MagicMock()
+    explanation.root_cause = "Pool exhausted."
+    explanation.contributing_factors = ["Too many DB connections"]
+    explanation.suggested_fix = "Increase pool_size."
+    explanation.confidence = "high"
+
+    save_last_explanation(explanation)
+    code = _run_last()
+
+    assert code == 0
+    out = capsys.readouterr().out
+    assert "Pool exhausted" in out
+    assert "high" in out
+    assert "Increase pool_size" in out
+
+
+def test_run_last_returns_1_when_no_store(tmp_path):
+    fake_path = tmp_path / "nonexistent.json"
+    with patch("because.cli._STORE_PATH", fake_path):
+        code = _run_last()
+    assert code == 1
+
+
+def test_main_last_subcommand_dispatches(capsys):
+    explanation = MagicMock()
+    explanation.root_cause = "Something broke."
+    explanation.contributing_factors = []
+    explanation.suggested_fix = "Fix it."
+    explanation.confidence = "medium"
+
+    save_last_explanation(explanation)
+
+    with patch("sys.argv", ["because", "last"]):
+        with pytest.raises(SystemExit) as exc_info:
+            main()
+    assert exc_info.value.code == 0
+    assert "Something broke" in capsys.readouterr().out
+
+
+def test_explain_async_saves_last_explanation(tmp_path):
+    from unittest.mock import AsyncMock as AM
+    from because.explainer import _parse_response
+
+    fake_path = tmp_path / "last.json"
+    explanation = _parse_response(_GOOD_JSON)
+
+    with patch("because.cli._STORE_PATH", fake_path):
+        save_last_explanation(explanation)
+
+    data = json.loads(fake_path.read_text())
+    assert data["root_cause"] == "Pool exhausted."

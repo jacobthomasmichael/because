@@ -222,6 +222,11 @@ async def explain_async(
     raw = await p.complete(prompt)
     explanation = _parse_response(raw)
     exc.__llm_explanation__ = explanation  # type: ignore[attr-defined]
+    try:
+        from because.cli import save_last_explanation
+        save_last_explanation(explanation)
+    except Exception:
+        pass
     return explanation
 
 

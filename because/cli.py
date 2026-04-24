@@ -2,22 +2,50 @@
 because CLI
 
 Usage:
-    because explain [options] [FILE]
-
-Reads a Python stack trace from FILE or stdin and returns a plain-English
-root cause analysis powered by an LLM.
+    because explain [options] [FILE]   Explain a stack trace using an LLM
+    because last                       Print the most recent explanation from this process
 
 Examples:
     cat error.log | because explain
     because explain error.log
     because explain --provider openai --model gpt-4o error.log
+    because last
 """
 from __future__ import annotations
 
 import argparse
 import asyncio
+import json
 import os
 import sys
+import tempfile
+from pathlib import Path
+
+
+# ── explanation store (temp file) ─────────────────────────────────────────────
+
+_STORE_PATH = Path(tempfile.gettempdir()) / "because_last_explanation.json"
+
+
+def save_last_explanation(explanation) -> None:
+    """Persist the most recent Explanation to a temp file for `because last`."""
+    try:
+        data = {
+            "root_cause": explanation.root_cause,
+            "contributing_factors": explanation.contributing_factors,
+            "suggested_fix": explanation.suggested_fix,
+            "confidence": explanation.confidence,
+        }
+        _STORE_PATH.write_text(json.dumps(data))
+    except Exception:
+        pass
+
+
+def load_last_explanation() -> dict | None:
+    try:
+        return json.loads(_STORE_PATH.read_text())
+    except Exception:
+        return None
 
 
 # ── prompt ────────────────────────────────────────────────────────────────────
@@ -86,10 +114,7 @@ async def _run_explain(args: argparse.Namespace) -> int:
     if provider_name == "anthropic":
         api_key = api_key or os.environ.get("ANTHROPIC_API_KEY")
         if not api_key:
-            print(
-                "because: set ANTHROPIC_API_KEY or pass --api-key",
-                file=sys.stderr,
-            )
+            print("because: set ANTHROPIC_API_KEY or pass --api-key", file=sys.stderr)
             return 1
         kwargs = {"api_key": api_key}
         if args.model:
@@ -99,15 +124,11 @@ async def _run_explain(args: argparse.Namespace) -> int:
     elif provider_name == "openai":
         api_key = api_key or os.environ.get("OPENAI_API_KEY")
         if not api_key:
-            print(
-                "because: set OPENAI_API_KEY or pass --api-key",
-                file=sys.stderr,
-            )
+            print("because: set OPENAI_API_KEY or pass --api-key", file=sys.stderr)
             return 1
         kwargs = {"api_key": api_key}
         if args.model:
             kwargs["model"] = args.model
-        from because.explainer import OpenAIProvider
         provider = OpenAIProvider(**kwargs)
 
     else:
@@ -120,7 +141,34 @@ async def _run_explain(args: argparse.Namespace) -> int:
     prompt = _build_cli_prompt(text)
     raw = await provider.complete(prompt)
     explanation = _parse_response(raw)
+    save_last_explanation(explanation)
     print(str(explanation))
+    return 0
+
+
+# ── last subcommand ───────────────────────────────────────────────────────────
+
+def _run_last() -> int:
+    data = load_last_explanation()
+    if data is None:
+        print("because: no explanation stored yet. Run `because explain` first.",
+              file=sys.stderr)
+        return 1
+
+    confidence = data.get("confidence", "low")
+    root_cause = data.get("root_cause", "")
+    factors = data.get("contributing_factors", [])
+    fix = data.get("suggested_fix", "")
+
+    lines = [f"Root cause ({confidence} confidence): {root_cause}"]
+    if factors:
+        lines.append("Contributing factors:")
+        for f in factors:
+            lines.append(f"  • {f}")
+    if fix:
+        lines.append(f"Suggested fix: {fix}")
+
+    print("\n".join(lines))
     return 0
 
 
@@ -159,10 +207,17 @@ def main() -> None:
         help="API key (default: ANTHROPIC_API_KEY or OPENAI_API_KEY env var).",
     )
 
+    sub.add_parser(
+        "last",
+        help="Print the most recent explanation stored by because explain.",
+    )
+
     args = parser.parse_args()
 
     if args.command == "explain":
         sys.exit(asyncio.run(_run_explain(args)))
+    elif args.command == "last":
+        sys.exit(_run_last())
     else:
         parser.print_help()
         sys.exit(0)
