@@ -38,10 +38,15 @@ def enrich(exc: BaseException) -> BaseException:
     return exc
 
 
-def format_context_chain(exc: BaseException) -> str:
+def format_context_chain(exc: BaseException, within_seconds: float | None = None) -> str:
     chain: ContextChain | None = getattr(exc, "__context_chain__", None)
     if chain is None:
         return ""
+
+    ops = chain.operations
+    if within_seconds is not None:
+        cutoff = time.monotonic() - within_seconds
+        ops = [op for op in ops if op.timestamp >= cutoff]
 
     lines = ["", "[because context]"]
 
@@ -57,9 +62,11 @@ def format_context_chain(exc: BaseException) -> str:
         for s in chain.swallowed:
             lines.append(f"    {s.exc_type}: {s.message}")
 
-    if chain.operations:
-        lines.append(f"  Recent operations ({len(chain.operations)}):")
-        for op in chain.operations[-20:]:
+    if ops:
+        label = (f"Recent operations ({len(ops)}, last {within_seconds:.0f}s)"
+                 if within_seconds is not None else f"Recent operations ({len(ops)})")
+        lines.append(f"  {label}:")
+        for op in ops[-20:]:
             status = "ok" if op.success else "FAIL"
             dur = f"{op.duration_ms:.1f}ms" if op.duration_ms is not None else "—"
             meta = _format_meta(op)

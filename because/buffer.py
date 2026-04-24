@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import asyncio
 import time
 from collections import deque
 from contextvars import ContextVar
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any
+from typing import Any, Coroutine, TypeVar
+
+_T = TypeVar("_T")
 
 DEFAULT_BUFFER_SIZE = 128
 
@@ -70,6 +73,43 @@ def record(
             metadata=metadata,
         )
     )
+
+
+async def gather(*coros: Coroutine, return_exceptions: bool = False) -> list:
+    """Drop-in replacement for asyncio.gather() that merges child task buffers
+    back into the parent context after all tasks complete.
+
+    Without this, each asyncio task gets its own isolated ring buffer copy
+    (ContextVar semantics), so DB/HTTP ops recorded in subtasks are invisible
+    when the parent exception fires.
+
+    Usage::
+
+        results = await because.gather(fetch(url1), fetch(url2), query_db())
+
+    Equivalent to asyncio.gather() in every other respect.
+    """
+    parent_buf = get_context()
+    child_buffers: list[RingBuffer] = []
+
+    async def _wrap(coro: Coroutine) -> Any:
+        child_buf = RingBuffer(maxsize=parent_buf._buf.maxlen or DEFAULT_BUFFER_SIZE)
+        _ctx_buffer.set(child_buf)
+        child_buffers.append(child_buf)
+        return await coro
+
+    wrapped = [_wrap(c) for c in coros]
+    results = await asyncio.gather(*wrapped, return_exceptions=return_exceptions)
+
+    # Merge all child ops into the parent buffer, sorted by timestamp
+    all_ops = sorted(
+        (op for buf in child_buffers for op in buf.snapshot()),
+        key=lambda op: op.timestamp,
+    )
+    for op in all_ops:
+        parent_buf.record(op)
+
+    return list(results)
 
 
 def install(buffer_size: int = DEFAULT_BUFFER_SIZE) -> None:
