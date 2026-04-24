@@ -4,6 +4,13 @@ All notable changes to `because-py` are documented here.
 
 ---
 
+## [0.2.12] — 2026-04-24
+
+### Added
+- Dashboard screenshot in README/PyPI documentation.
+
+---
+
 ## [0.2.11] — 2026-04-24
 
 ### Added

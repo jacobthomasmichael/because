@@ -270,6 +270,8 @@ because last
 
 ### `because dashboard`
 
+![because dashboard](https://raw.githubusercontent.com/jacobthomasmichael/because/main/docs/dashboard_screenshot.png)
+
 Start a local web dashboard that shows the most recent explanation and context chain, auto-refreshing every 3 seconds:
 
 ```bash
