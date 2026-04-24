@@ -1,49 +1,49 @@
 # because
 
-Stack traces show symptoms. `because` shows causes.
+**Stack traces show symptoms. `because` shows causes.**
+
+Your error tracker fires. The stack trace points to `db/pool.py:142`. You open the file, stare at the code, and start the slow walk backwards through logs, traces, and recent deploys — trying to reconstruct what actually happened.
+
+`because` does that reconstruction for you. It captures a rolling timeline of recent operations in-process, matches known failure patterns at throw time, and — optionally — sends the full context to an LLM for a plain-English explanation. All before you open a single log file.
 
 ---
 
-## The problem
+## Before and after
 
-Your monitoring dashboard lights up with `ConnectionError: connection refused on localhost:5432`. The stack trace points to `db/pool.py:142`. You have no idea why.
-
-The real story: a recent deploy added a synchronous DB call to a hot path. Under load, 48 of 50 connections filled up. Three `TimeoutError`s were silently swallowed over the prior 10 seconds. By the time the `ConnectionError` fired, all the context was gone.
-
-This is the ABS warning light telling you the battery is dead. Today's error tooling stops at the symptom.
-
-`because` captures the context *before* the crash and attaches it to the exception at throw time.
-
----
-
-## What it looks like
-
-**Without because:**
+**Before `because`:**
 ```
-ConnectionError: connection refused on localhost:5432
-  File "db/pool.py", line 142, in execute
+sqlalchemy.exc.TimeoutError: QueuePool limit of size 5 overflow 10 reached,
+connection timed out, timeout 30
+  File "app/api/checkout.py", line 54, in handle_checkout
+    result = db.execute(query)
 ```
+You have a pool error. You don't know why.
 
-**With because:**
+**After `because`:**
 ```
-ConnectionError: connection refused on localhost:5432
-  File "db/pool.py", line 142, in execute
+sqlalchemy.exc.TimeoutError: QueuePool limit of size 5 overflow 10 reached,
+connection timed out, timeout 30
+  File "app/api/checkout.py", line 54, in handle_checkout
+    result = db.execute(query)
 
 [because context]
   Likely cause: Database connection pool may be exhausted
     • Exception message contains 'QueuePool limit'
-    • 8 DB queries in context window (pool was active)
-    • 5/8 recent DB queries failed (63% failure rate)
-  Recent operations (8):
-    [ok] db_query          2.1ms  SELECT * FROM orders WHERE user_id = ?
-    [ok] db_query          1.8ms  SELECT * FROM orders WHERE user_id = ?
-    [ok] db_query          2.4ms  SELECT * FROM orders WHERE user_id = ?
-    [FAIL] db_query        0.5ms  SELECT * FROM orders WHERE user_id = ?  error=OperationalError
-    [FAIL] db_query        0.5ms  SELECT * FROM orders WHERE user_id = ?  error=OperationalError
-    [FAIL] db_query        0.5ms  SELECT * FROM orders WHERE user_id = ?  error=OperationalError
-    [FAIL] db_query        0.5ms  SELECT * FROM orders WHERE user_id = ?  error=OperationalError
-    [FAIL] db_query        0.5ms  SELECT * FROM orders WHERE user_id = ?  error=OperationalError
+    • 12 DB queries in context window (pool was active)
+    • 9/12 recent DB queries failed (75% failure rate)
+  Caught-and-swallowed (2):
+    OperationalError: server closed the connection unexpectedly  (8.3s ago)
+    OperationalError: server closed the connection unexpectedly  (3.1s ago)
+  Recent operations (12):
+    [ok]   db_query       2.1ms  SELECT * FROM orders WHERE user_id = ?
+    [ok]   db_query       1.8ms  SELECT * FROM orders WHERE user_id = ?
+    [ok]   db_query      18.4ms  UPDATE orders SET status = 'processing' ...
+    [FAIL] db_query       0.5ms  error=OperationalError
+    [FAIL] db_query       0.5ms  error=OperationalError
+    [FAIL] db_query       0.5ms  error=OperationalError
+    ...
 ```
+You see the pattern. Two swallowed errors in the 10 seconds before the crash. The pool draining under load. You know exactly where to look.
 
 ---
 
@@ -57,14 +57,14 @@ With instrumentation extras:
 
 ```bash
 pip install "because-py[sqlalchemy]"
-pip install "because-py[sqlalchemy,requests,httpx]"
+pip install "because-py[sqlalchemy,requests,httpx,redis]"
 ```
 
-With the LLM explainer:
+With the LLM explainer (Claude or GPT-4o):
 
 ```bash
-pip install "because-py[llm]"        # Anthropic (default)
-pip install "because-py[llm,openai]" # + OpenAI support
+pip install "because-py[llm]"         # Anthropic
+pip install "because-py[llm,openai]"  # + OpenAI
 ```
 
 ---
@@ -76,13 +76,13 @@ import because
 because.install()
 ```
 
-That's it. `because` hooks `sys.excepthook` and starts recording operations in the background. Any uncaught exception automatically gets enriched context appended to stderr — no changes to your exception handlers required.
+That's it. `because` hooks `sys.excepthook` and starts recording operations in a per-thread ring buffer. Any uncaught exception automatically gets an enriched context chain appended to stderr — no changes to your existing error handling required.
 
 ---
 
 ## Instrumenting libraries
 
-`because` ships with instruments for common libraries. Attach them to your existing clients:
+Attach instruments to your existing clients — they record timing, success/failure, and metadata on every operation:
 
 ```python
 from because.instruments.sqlalchemy import instrument as instrument_sa
@@ -90,16 +90,132 @@ from because.instruments.requests import instrument as instrument_requests
 from because.instruments.httpx import instrument as instrument_httpx
 from because.instruments.redis import instrument as instrument_redis
 from because.instruments.logging import instrument as instrument_logging
-import requests
 
-instrument_sa(engine)                  # SQLAlchemy engine
+instrument_sa(engine)                   # SQLAlchemy engine
 instrument_requests(requests.Session()) # requests Session
-instrument_httpx(httpx_client)         # httpx Client or AsyncClient
-instrument_redis(redis_client)         # redis-py client (sync or async)
-instrument_logging()                   # root logger (WARNING and above)
+instrument_httpx(client)                # httpx Client or AsyncClient
+instrument_redis(redis_client)          # redis-py (sync or async)
+instrument_logging()                    # root logger, WARNING and above
 ```
 
-Each instrument records operation timing, success/failure, and relevant metadata into a per-thread/per-task ring buffer. Zero I/O on the hot path.
+All instruments write to a bounded ring buffer — **zero I/O on the hot path**.
+
+---
+
+## Recording swallowed exceptions
+
+Silently caught exceptions are often the real cause of a downstream crash. `because.catch()` makes them visible:
+
+```python
+def get_user(user_id: int):
+    with because.catch(Exception):
+        return db.query(User).filter_by(id=user_id).one()
+    return None  # only reached when exception was swallowed
+```
+
+When a downstream `AttributeError: 'NoneType' object has no attribute 'email'` fires, `because` surfaces the swallowed DB error as the likely cause — not the symptom.
+
+---
+
+## Enriching caught exceptions manually
+
+```python
+try:
+    process_order(order_id)
+except Exception as exc:
+    because.enrich_with_swallowed(exc)
+    logger.error("Order processing failed", extra={"because": exc.__context_chain__})
+    raise
+```
+
+`__context_chain__` serializes cleanly into Sentry `extra`, Datadog span tags, or structured log fields.
+
+---
+
+## LLM-based root cause analysis
+
+Go beyond pattern matching — get a plain-English explanation with a concrete suggested fix:
+
+```python
+import because
+
+because.configure_llm(api_key="sk-ant-...")  # Anthropic by default
+
+try:
+    risky_operation()
+except Exception as exc:
+    because.enrich_with_swallowed(exc)
+    explanation = await because.explain_async(exc)
+    print(explanation)
+```
+
+Output:
+```
+Root cause (high confidence): The database lookup silently failed due to a dropped
+connection (OperationalError), returning None instead of a user object. The downstream
+attribute access on that None value then raised AttributeError.
+Contributing factors:
+  • An OperationalError was caught and swallowed without re-raising, masking the failure.
+  • No None-check exists before accessing .email on the return value.
+Suggested fix: Re-raise or propagate the OperationalError in get_user(), and add a
+guard — if user is None: raise ValueError('User not found') — before accessing attributes.
+```
+
+Use OpenAI instead:
+
+```python
+because.configure_llm(api_key="sk-...", provider="openai", model="gpt-4o")
+```
+
+Bring your own provider by implementing the `LLMProvider` protocol:
+
+```python
+class MyProvider:
+    async def complete(self, prompt: str) -> str:
+        ...  # call any LLM you like
+```
+
+Sync usage (avoid in async contexts):
+
+```python
+explanation = because.explain(exc)
+```
+
+---
+
+## CLI
+
+Analyze any stack trace without touching your code:
+
+```bash
+# pipe from a log file
+cat error.log | because explain
+
+# pass a file directly
+because explain error.log
+
+# paste interactively (Ctrl-D to submit)
+because explain
+
+# use OpenAI
+because explain --provider openai --model gpt-4o error.log
+```
+
+Example output:
+
+```
+Root cause (high confidence): The SQLAlchemy connection pool has been exhausted —
+all 15 allowed connections are in use and new requests are timing out after 30s.
+Contributing factors:
+  • Connections may not be released promptly due to missing session closes or
+    long-running transactions.
+  • A spike in concurrent checkout requests may be exceeding pool capacity.
+Suggested fix: Audit the checkout path to ensure sessions are always closed via
+context managers (with db.connect() as conn:) and check for uncommitted transactions
+holding connections open.
+```
+
+Reads `ANTHROPIC_API_KEY` or `OPENAI_API_KEY` from the environment, or pass `--api-key` directly.
 
 ---
 
@@ -123,152 +239,60 @@ MIDDLEWARE = [
 
 ---
 
-## Recording swallowed exceptions
-
-Caught-and-not-reraised exceptions are often the real cause of a downstream crash. Wrap risky calls with `because.catch()` to make them visible:
-
-```python
-def get_user(user_id):
-    with because.catch(Exception):
-        return db.query(User).filter_by(id=user_id).one()
-    return None  # reached only if exception was swallowed
-```
-
-When a downstream `AttributeError: 'NoneType' object has no attribute 'email'` fires, `because` will surface the swallowed DB error as the likely cause.
-
----
-
-## Enriching caught exceptions manually
-
-For exceptions you handle yourself:
-
-```python
-try:
-    process_order(order_id)
-except Exception as exc:
-    because.enrich_with_swallowed(exc)
-    logger.error("Order processing failed", extra={"context": exc.__context_chain__})
-    raise
-```
-
-`__context_chain__` serializes cleanly into Sentry `extra`, Datadog error attributes, or structured log fields.
-
----
-
-## LLM-based explanation (v0.2)
-
-Get a plain-English root cause analysis powered by Claude or GPT-4o:
-
-```python
-import because
-
-because.configure_llm(api_key="sk-ant-...")  # Anthropic by default
-
-try:
-    risky_operation()
-except Exception as exc:
-    because.enrich_with_swallowed(exc)
-    explanation = await because.explain_async(exc)
-    print(explanation.root_cause)
-    print(explanation.suggested_fix)
-```
-
-Sync version (avoid in async contexts):
-
-```python
-explanation = because.explain(exc)
-```
-
-Use OpenAI instead:
-
-```python
-because.configure_llm(api_key="sk-...", provider="openai")
-```
-
-Bring your own provider by implementing the `LLMProvider` protocol:
-
-```python
-class MyProvider:
-    async def complete(self, prompt: str) -> str:
-        ...
-```
-
----
-
-## CLI
-
-Analyze any stack trace from the command line — no code changes required:
-
-```bash
-# pipe from a log file
-cat error.log | because explain
-
-# or pass a file directly
-because explain error.log
-
-# paste interactively (Ctrl-D to submit)
-because explain
-
-# use OpenAI instead
-because explain --provider openai --model gpt-4o error.log
-```
-
-Reads `ANTHROPIC_API_KEY` or `OPENAI_API_KEY` from the environment, or pass `--api-key` directly.
-
----
-
-## Heuristic patterns
-
-`because` ships with deterministic cascade patterns that run at throw time — no API key required:
-
-| Pattern | Fires when |
-|---|---|
-| `pool_exhaustion` | Connection/pool error + recent DB activity or explicit pool message |
-| `silent_failure` | Swallowed exception preceded the current error |
-| `retry_storm` | Timeout + high concentration of repeated HTTP requests to the same host |
-
-Each pattern is a small, independently testable unit. Output always uses hedged language ("likely cause", "contributing factor") — `because` never claims certainty.
-
----
-
 ## Observability integrations
 
+`because` attaches to your existing observability stack — it doesn't replace it:
+
 ```python
-# Sentry
+# Sentry: attach context chain to every error event
 from because.integrations.sentry import before_send
 sentry_sdk.init(..., before_send=before_send)
 
-# Datadog
+# Datadog: tag the active span with because context
 from because.integrations.datadog import tag_current_span
 tag_current_span(exc)
 
-# Structured logging
+# Structured logging: emit because context as a JSON field
 from because.integrations.logging import BecauseFormatter
 handler.setFormatter(BecauseFormatter())
 ```
 
 ---
 
+## Heuristic patterns
+
+Pattern matching runs at throw time — no API key, no latency:
+
+| Pattern | Fires when |
+|---|---|
+| `pool_exhaustion` | Connection/pool error + recent DB failures or explicit pool message |
+| `silent_failure` | A swallowed exception preceded the current error |
+| `retry_storm` | Timeout + high concentration of repeated HTTP requests to the same host |
+
+Each pattern is a small, independently testable unit. Output always uses hedged language — `because` never claims certainty.
+
+---
+
 ## Design principles
 
-- **Honest framing.** Output uses "likely cause" and "contributing factor." Wrong-but-confident destroys trust.
+- **Honest framing.** Output uses "likely cause" and "contributing factor." Wrong-but-confident destroys trust faster than no answer.
 - **Zero-config default.** `import because; because.install()` does something useful immediately.
-- **No hot-path cost.** Instrumentation is bounded ring buffers. Enrichment runs only on exception.
-- **Composable with existing tools.** Attaches to Sentry, Datadog, and structured logging — doesn't replace them.
+- **No hot-path cost.** Instrumentation writes to bounded ring buffers. Enrichment and LLM calls happen only on exception.
+- **Composable.** Attaches to Sentry, Datadog, and structured logging. Doesn't replace them.
 - **Library, not platform.** Pure Python, no required backend, ships as a pip package.
 
 ---
 
-## Examples
-
-Runnable demos in `examples/`:
+## Runnable examples
 
 ```bash
 python examples/pool_exhaustion.py   # connection pool saturated under load
 python examples/silent_failure.py    # swallowed DB error causes downstream crash
-```
+python examples/retry_storm.py       # naive retry loop hammers a degraded API
 
-Each demo shows the cascade being triggered and `because` surfacing the cause.
+# LLM explainer (requires ANTHROPIC_API_KEY)
+python examples/llm_explainer.py
+```
 
 ---
 
