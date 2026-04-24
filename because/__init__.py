@@ -1,4 +1,4 @@
-from because.buffer import get_context, gather
+from because.buffer import get_context, gather, create_task
 from because.enrichment import catch, enrich, enrich_with_swallowed, format_context_chain, watch
 from because.enrichment import install as _install_enrichment
 from because.buffer import install as _install_buffer
@@ -28,6 +28,7 @@ __all__ = [
     "catch",
     "watch",
     "gather",
+    "create_task",
     # LLM explainer
     "Explanation",
     "AnthropicProvider",

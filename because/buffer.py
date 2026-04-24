@@ -112,6 +112,46 @@ async def gather(*coros: Coroutine, return_exceptions: bool = False) -> list:
     return list(results)
 
 
+def create_task(
+    coro: Coroutine,
+    *,
+    name: str | None = None,
+    merge_on_done: bool = True,
+) -> asyncio.Task:
+    """Drop-in replacement for asyncio.create_task() that optionally merges
+    the child task's ring buffer back into the parent when the task completes.
+
+    Args:
+        coro: The coroutine to schedule.
+        name: Optional task name (passed to asyncio.create_task).
+        merge_on_done: If True (default), ops recorded in the child task are
+            merged back into the parent buffer when the task finishes.
+
+    Usage::
+
+        task = because.create_task(fetch_user(user_id))
+        result = await task
+    """
+    parent_buf = get_context()
+    child_buf = RingBuffer(maxsize=parent_buf._buf.maxlen or DEFAULT_BUFFER_SIZE)
+
+    async def _wrap() -> Any:
+        _ctx_buffer.set(child_buf)
+        return await coro
+
+    task = asyncio.create_task(_wrap(), name=name)
+
+    if merge_on_done:
+        def _on_done(t: asyncio.Task) -> None:
+            all_ops = sorted(child_buf.snapshot(), key=lambda op: op.timestamp)
+            for op in all_ops:
+                parent_buf.record(op)
+
+        task.add_done_callback(_on_done)
+
+    return task
+
+
 def install(buffer_size: int = DEFAULT_BUFFER_SIZE) -> None:
     global _installed, DEFAULT_BUFFER_SIZE
     if _installed:
