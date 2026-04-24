@@ -17,6 +17,9 @@ env/
 
 *.so
 
+# Personal / local files
+blog_post_linkedin_draft.md
+
 # SQLite databases created by examples
 *.db
 file::memory:*
