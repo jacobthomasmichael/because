@@ -195,6 +195,28 @@ class MyProvider:
 
 ---
 
+## CLI
+
+Analyze any stack trace from the command line — no code changes required:
+
+```bash
+# pipe from a log file
+cat error.log | because explain
+
+# or pass a file directly
+because explain error.log
+
+# paste interactively (Ctrl-D to submit)
+because explain
+
+# use OpenAI instead
+because explain --provider openai --model gpt-4o error.log
+```
+
+Reads `ANTHROPIC_API_KEY` or `OPENAI_API_KEY` from the environment, or pass `--api-key` directly.
+
+---
+
 ## Heuristic patterns
 
 `because` ships with deterministic cascade patterns that run at throw time — no API key required:

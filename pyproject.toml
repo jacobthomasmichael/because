@@ -26,6 +26,9 @@ classifiers = [
 ]
 dependencies = []
 
+[project.scripts]
+because = "because.cli:main"
+
 [project.urls]
 Homepage = "https://github.com/jacobthomasmichael/because"
 Repository = "https://github.com/jacobthomasmichael/because"
