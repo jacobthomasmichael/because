@@ -4,6 +4,20 @@ All notable changes to `because-py` are documented here.
 
 ---
 
+## [0.2.11] — 2026-04-24
+
+### Added
+- `because dashboard` CLI subcommand: starts a local HTTP server (default port 7331) and opens a live dashboard in your browser. Shows the most recent explanation, context chain, pattern matches, swallowed exceptions, and operations timeline. Auto-refreshes every 3 seconds. Zero new dependencies (stdlib only).
+
+---
+
+## [0.2.10] — 2026-04-24
+
+### Added
+- Context chain persistence: `explain_async()` now saves the full context chain (operations, swallowed exceptions, pattern matches) to a temp file alongside the explanation, making it available to the dashboard.
+
+---
+
 ## [0.2.9] — 2026-04-24
 
 ### Added

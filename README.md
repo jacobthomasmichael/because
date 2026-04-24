@@ -268,6 +268,25 @@ because last
 
 `because last` works across both the CLI and in-process `explain_async()` calls — every explanation is persisted automatically so you can review it any time without re-running the LLM.
 
+### `because dashboard`
+
+Start a local web dashboard that shows the most recent explanation and context chain, auto-refreshing every 3 seconds:
+
+```bash
+because dashboard            # opens browser at http://127.0.0.1:7331
+because dashboard --port 8080
+because dashboard --no-open  # start server without opening browser
+```
+
+The dashboard displays:
+- **Root cause** with confidence badge
+- **Contributing factors** and **suggested fix**
+- **Pattern matches** with evidence
+- **Swallowed exceptions** (caught-and-suppressed errors that contributed to the failure)
+- **Operations timeline** — last 50 DB queries, HTTP requests, cache calls, etc. with pass/fail status and duration
+
+The dashboard reads from the same temp files written by `explain_async()` and `because explain`, so it works whether you triggered analysis from the CLI or from inside your app. No extra dependencies — stdlib only.
+
 Example output:
 
 ```
@@ -396,5 +415,4 @@ python examples/llm_explainer.py
 ## Roadmap
 
 - **v1.0** — Cross-process / cross-service causal reasoning
-- Local web dashboard for browsing context chains visually
 - Node.js / TypeScript port

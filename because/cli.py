@@ -3,13 +3,16 @@ because CLI
 
 Usage:
     because explain [options] [FILE]   Explain a stack trace using an LLM
-    because last                       Print the most recent explanation from this process
+    because last                       Print the most recent explanation
+    because dashboard [--port PORT]    Open the local web dashboard
 
 Examples:
     cat error.log | because explain
     because explain error.log
     because explain --provider openai --model gpt-4o error.log
     because last
+    because dashboard
+    because dashboard --port 8080 --no-open
 """
 from __future__ import annotations
 
@@ -25,6 +28,7 @@ from pathlib import Path
 # ── explanation store (temp file) ─────────────────────────────────────────────
 
 _STORE_PATH = Path(tempfile.gettempdir()) / "because_last_explanation.json"
+_CHAIN_PATH = Path(tempfile.gettempdir()) / "because_last_chain.json"
 
 
 def save_last_explanation(explanation) -> None:
@@ -39,6 +43,25 @@ def save_last_explanation(explanation) -> None:
         _STORE_PATH.write_text(json.dumps(data))
     except Exception:
         pass
+
+
+def save_last_chain(exc: BaseException) -> None:
+    """Persist the most recent context chain to a temp file for the dashboard."""
+    try:
+        from because.integrations.serialize import chain_from_exc, chain_to_dict
+        chain = chain_from_exc(exc)
+        if chain is None:
+            return
+        _CHAIN_PATH.write_text(json.dumps(chain_to_dict(chain), default=str))
+    except Exception:
+        pass
+
+
+def load_last_chain() -> dict | None:
+    try:
+        return json.loads(_CHAIN_PATH.read_text())
+    except Exception:
+        return None
 
 
 def load_last_explanation() -> dict | None:
@@ -212,12 +235,32 @@ def main() -> None:
         help="Print the most recent explanation stored by because explain.",
     )
 
+    dashboard_parser = sub.add_parser(
+        "dashboard",
+        help="Open the local web dashboard.",
+    )
+    dashboard_parser.add_argument(
+        "--port",
+        type=int,
+        default=7331,
+        help="Port to listen on (default: 7331).",
+    )
+    dashboard_parser.add_argument(
+        "--no-open",
+        action="store_true",
+        default=False,
+        help="Don't open the browser automatically.",
+    )
+
     args = parser.parse_args()
 
     if args.command == "explain":
         sys.exit(asyncio.run(_run_explain(args)))
     elif args.command == "last":
         sys.exit(_run_last())
+    elif args.command == "dashboard":
+        from because.dashboard import run as run_dashboard
+        run_dashboard(port=args.port, open_browser=not args.no_open)
     else:
         parser.print_help()
         sys.exit(0)

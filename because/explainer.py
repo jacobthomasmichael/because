@@ -223,8 +223,9 @@ async def explain_async(
     explanation = _parse_response(raw)
     exc.__llm_explanation__ = explanation  # type: ignore[attr-defined]
     try:
-        from because.cli import save_last_explanation
+        from because.cli import save_last_explanation, save_last_chain
         save_last_explanation(explanation)
+        save_last_chain(exc)
     except Exception:
         pass
     return explanation
