@@ -124,6 +124,64 @@ class OpenAIProvider:
         return response.choices[0].message.content or ""
 
 
+class XAIProvider:
+    """Uses the xAI API (grok-3 by default). OpenAI-compatible."""
+
+    def __init__(
+        self,
+        api_key: str,
+        model: str = "grok-3",
+        max_tokens: int = 1024,
+    ) -> None:
+        self.api_key = api_key
+        self.model = model
+        self.max_tokens = max_tokens
+
+    async def complete(self, prompt: str) -> str:
+        try:
+            import openai
+        except ImportError:
+            raise ImportError(
+                "openai package required: pip install \"because-py[openai]\""
+            )
+        client = openai.AsyncOpenAI(
+            api_key=self.api_key,
+            base_url="https://api.x.ai/v1",
+        )
+        response = await client.chat.completions.create(
+            model=self.model,
+            max_tokens=self.max_tokens,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        return response.choices[0].message.content or ""
+
+
+class GeminiProvider:
+    """Uses the Google Gemini API (gemini-2.0-flash by default)."""
+
+    def __init__(
+        self,
+        api_key: str,
+        model: str = "gemini-2.0-flash",
+    ) -> None:
+        self.api_key = api_key
+        self.model = model
+
+    async def complete(self, prompt: str) -> str:
+        try:
+            from google import genai
+        except ImportError:
+            raise ImportError(
+                "google-genai package required: pip install \"because-py[gemini]\""
+            )
+        client = genai.Client(api_key=self.api_key)
+        response = await client.aio.models.generate_content(
+            model=self.model,
+            contents=prompt,
+        )
+        return response.text or ""
+
+
 # ── global configuration ──────────────────────────────────────────────────────
 
 _default_provider: LLMProvider | None = None
@@ -137,23 +195,26 @@ def configure_llm(
     """Configure the default LLM provider used by explain() / explain_async().
 
     Args:
-        api_key: Your API key (Anthropic or OpenAI).
-        model: Model name override. Defaults to claude-sonnet-4-6 or gpt-4o.
-        provider: "anthropic" (default) or "openai".
+        api_key: Your API key.
+        model: Model name override. Defaults vary by provider.
+        provider: "anthropic" (default), "openai", "xai", or "gemini".
     """
     global _default_provider
+    kwargs: dict = {"api_key": api_key}
+    if model:
+        kwargs["model"] = model
     if provider == "anthropic":
-        kwargs = {"api_key": api_key}
-        if model:
-            kwargs["model"] = model
         _default_provider = AnthropicProvider(**kwargs)
     elif provider == "openai":
-        kwargs = {"api_key": api_key}
-        if model:
-            kwargs["model"] = model
         _default_provider = OpenAIProvider(**kwargs)
+    elif provider == "xai":
+        _default_provider = XAIProvider(**kwargs)
+    elif provider == "gemini":
+        _default_provider = GeminiProvider(**kwargs)
     else:
-        raise ValueError(f"Unknown provider: {provider!r}. Use 'anthropic' or 'openai'.")
+        raise ValueError(
+            f"Unknown provider: {provider!r}. Use 'anthropic', 'openai', 'xai', or 'gemini'."
+        )
 
 
 # ── prompt builder ────────────────────────────────────────────────────────────

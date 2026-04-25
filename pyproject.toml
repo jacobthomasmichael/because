@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "because-py"
-version = "0.2.13"
+version = "0.2.14"
 description = "Enriches exceptions with plain-English causal chains at throw time"
 readme = "README.md"
 license = { text = "MIT" }
@@ -49,6 +49,8 @@ llm = ["anthropic>=0.25"]
 otel = ["opentelemetry-api>=1.0"]
 grpc = ["grpcio>=1.50"]
 openai = ["openai>=1.0"]
+xai = ["openai>=1.0"]
+gemini = ["google-genai>=1.0"]
 all = [
     "sqlalchemy>=1.4",
     "requests>=2.0",

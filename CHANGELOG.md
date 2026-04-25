@@ -4,6 +4,15 @@ All notable changes to `because-py` are documented here.
 
 ---
 
+## [0.2.14] — 2026-04-25
+
+### Added
+- `XAIProvider`: xAI Grok support (`because-py[xai]`). Uses the OpenAI-compatible xAI API. Default model `grok-3`. Reads `XAI_API_KEY`.
+- `GeminiProvider`: Google Gemini support (`because-py[gemini]`). Default model `gemini-2.0-flash`. Reads `GEMINI_API_KEY`.
+- Both providers available via `because.configure_llm(provider="xai"|"gemini")` and `because explain --provider xai|gemini`.
+
+---
+
 ## [0.2.13] — 2026-04-24
 
 ### Changed

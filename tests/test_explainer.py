@@ -10,8 +10,10 @@ from because.enrichment import ContextChain, SwallowedExc
 from because.explainer import (
     AnthropicProvider,
     Explanation,
+    GeminiProvider,
     LLMProvider,
     OpenAIProvider,
+    XAIProvider,
     _parse_response,
     build_prompt,
     configure_llm,
@@ -143,6 +145,16 @@ def test_openai_provider_implements_protocol():
     assert isinstance(provider, LLMProvider)
 
 
+def test_xai_provider_implements_protocol():
+    provider = XAIProvider(api_key="test-key")
+    assert isinstance(provider, LLMProvider)
+
+
+def test_gemini_provider_implements_protocol():
+    provider = GeminiProvider(api_key="test-key")
+    assert isinstance(provider, LLMProvider)
+
+
 def test_custom_provider_implements_protocol():
     class MyProvider:
         async def complete(self, prompt: str) -> str:
@@ -239,6 +251,26 @@ def test_configure_llm_sets_openai_default():
         explainer_mod._default_provider = original
 
 
+def test_configure_llm_sets_xai_default():
+    import because.explainer as explainer_mod
+    original = explainer_mod._default_provider
+    try:
+        configure_llm(api_key="xai-test", provider="xai")
+        assert isinstance(explainer_mod._default_provider, XAIProvider)
+    finally:
+        explainer_mod._default_provider = original
+
+
+def test_configure_llm_sets_gemini_default():
+    import because.explainer as explainer_mod
+    original = explainer_mod._default_provider
+    try:
+        configure_llm(api_key="gemini-test", provider="gemini")
+        assert isinstance(explainer_mod._default_provider, GeminiProvider)
+    finally:
+        explainer_mod._default_provider = original
+
+
 def test_configure_llm_unknown_provider_raises():
     with pytest.raises(ValueError, match="Unknown provider"):
         configure_llm(api_key="key", provider="cohere")
@@ -264,3 +296,5 @@ def test_public_api_exports():
     assert hasattr(because, "Explanation")
     assert hasattr(because, "AnthropicProvider")
     assert hasattr(because, "OpenAIProvider")
+    assert hasattr(because, "XAIProvider")
+    assert hasattr(because, "GeminiProvider")

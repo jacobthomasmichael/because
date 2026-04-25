@@ -109,6 +109,8 @@ async def _run_explain(args: argparse.Namespace) -> int:
     from because.explainer import (
         AnthropicProvider,
         OpenAIProvider,
+        XAIProvider,
+        GeminiProvider,
         _parse_response,
     )
 
@@ -154,8 +156,28 @@ async def _run_explain(args: argparse.Namespace) -> int:
             kwargs["model"] = args.model
         provider = OpenAIProvider(**kwargs)
 
+    elif provider_name == "xai":
+        api_key = api_key or os.environ.get("XAI_API_KEY")
+        if not api_key:
+            print("because: set XAI_API_KEY or pass --api-key", file=sys.stderr)
+            return 1
+        kwargs = {"api_key": api_key}
+        if args.model:
+            kwargs["model"] = args.model
+        provider = XAIProvider(**kwargs)
+
+    elif provider_name == "gemini":
+        api_key = api_key or os.environ.get("GEMINI_API_KEY")
+        if not api_key:
+            print("because: set GEMINI_API_KEY or pass --api-key", file=sys.stderr)
+            return 1
+        kwargs = {"api_key": api_key}
+        if args.model:
+            kwargs["model"] = args.model
+        provider = GeminiProvider(**kwargs)
+
     else:
-        print(f"because: unknown provider {provider_name!r}. Use 'anthropic' or 'openai'.",
+        print(f"because: unknown provider {provider_name!r}. Use 'anthropic', 'openai', 'xai', or 'gemini'.",
               file=sys.stderr)
         return 1
 
@@ -215,7 +237,7 @@ def main() -> None:
     )
     explain_parser.add_argument(
         "--provider",
-        choices=["anthropic", "openai"],
+        choices=["anthropic", "openai", "xai", "gemini"],
         default=None,
         help="LLM provider (default: anthropic).",
     )
