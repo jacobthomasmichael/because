@@ -4,6 +4,13 @@ All notable changes to `because-py` are documented here.
 
 ---
 
+## [0.2.15] — 2026-04-25
+
+### Changed
+- README: added providers table (Anthropic, OpenAI, xAI, Gemini) with install extras, env vars, and default models. Updated CLI and intro copy.
+
+---
+
 ## [0.2.14] — 2026-04-25
 
 ### Added

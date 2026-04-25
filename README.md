@@ -61,7 +61,7 @@ pip install "because-py[sqlalchemy,requests,httpx,redis]"
 pip install "because-py[grpc]"
 ```
 
-With the LLM explainer (Claude or GPT-4o):
+With the LLM explainer (Claude, GPT-4o, Grok, or Gemini):
 
 ```bash
 pip install "because-py[llm]"         # Anthropic
@@ -223,10 +223,27 @@ Suggested fix: Re-raise or propagate the OperationalError in get_user(), and add
 guard — if user is None: raise ValueError('User not found') — before accessing attributes.
 ```
 
-Use OpenAI instead:
+### Supported providers
+
+| Provider | `provider=` | Default model | Extra | Env var |
+|---|---|---|---|---|
+| Anthropic | `"anthropic"` | `claude-sonnet-4-6` | `because-py[llm]` | `ANTHROPIC_API_KEY` |
+| OpenAI | `"openai"` | `gpt-4o` | `because-py[openai]` | `OPENAI_API_KEY` |
+| xAI (Grok) | `"xai"` | `grok-3` | `because-py[xai]` | `XAI_API_KEY` |
+| Google Gemini | `"gemini"` | `gemini-2.0-flash` | `because-py[gemini]` | `GEMINI_API_KEY` |
 
 ```python
+# Anthropic (default)
+because.configure_llm(api_key="sk-ant-...", provider="anthropic")
+
+# OpenAI
 because.configure_llm(api_key="sk-...", provider="openai", model="gpt-4o")
+
+# xAI Grok
+because.configure_llm(api_key="xai-...", provider="xai")
+
+# Google Gemini
+because.configure_llm(api_key="AIza...", provider="gemini", model="gemini-2.0-flash")
 ```
 
 Bring your own provider by implementing the `LLMProvider` protocol:
@@ -259,8 +276,10 @@ because explain error.log
 # paste interactively (Ctrl-D to submit)
 because explain
 
-# use OpenAI
+# use a specific provider
 because explain --provider openai --model gpt-4o error.log
+because explain --provider xai error.log
+because explain --provider gemini error.log
 
 # print the most recent explanation stored by any because explain call
 because last
