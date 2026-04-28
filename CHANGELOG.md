@@ -4,6 +4,13 @@ All notable changes to `because-py` are documented here.
 
 ---
 
+## [0.2.16] — 2026-04-28
+
+### Added
+- `benchmarks/` suite: ring buffer overhead (<0.6 µs/op), pattern accuracy (100% precision & recall across all three patterns), and a multi-layer time-to-diagnosis scenario. Results published in README.
+
+---
+
 ## [0.2.15] — 2026-04-25
 
 ### Changed

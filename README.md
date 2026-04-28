@@ -8,6 +8,103 @@ Your error tracker fires. The stack trace points to `db/pool.py:142`. You open t
 
 ---
 
+
+<!-- BENCHMARK_RESULTS_START -->
+## Benchmarks
+
+*Generated 2026-04-28 on Python 3.13.3. [Source](benchmarks/).*
+
+### 1 — Ring buffer overhead
+
+The hot-path instrumentation cost per recorded operation:
+
+| Metric | Value |
+|---|---|
+| Baseline (no-op) | `0.044 µs` |
+| `because` record() | `0.589 µs` |
+| **Net overhead** | **`0.545 µs` per op** |
+| Snapshot (128 ops) | `0.559 µs` |
+
+> Overhead is measured as the difference between recording an Op and a bare `time.monotonic()` call.
+> At 1,000 ops/sec that's **544.9 ms/s** of total overhead — effectively zero.
+
+---
+
+### 2 — Pattern detection accuracy
+
+Each pattern was tested against 5 positive and 5 negative scenarios:
+
+| Pattern | Precision | Recall | F1 | TP | FP | FN | TN |
+|---|---|---|---|---|---|---|---|
+| `pool_exhaustion` | 100% | 100% | 1.00 | 5 | 0 | 0 | 5 |
+| `retry_storm` | 100% | 100% | 1.00 | 5 | 0 | 0 | 5 |
+| `silent_failure` | 100% | 100% | 1.00 | 5 | 0 | 0 | 5 |
+
+---
+
+### 3 — Time-to-diagnosis: multi-layer cascade
+
+A realistic production incident is simulated:
+- Payment service degrades → retry loop fires against `payment.internal` (`retry_storm`)
+- DB connection pool saturates → 3 `TimeoutError`s caught and swallowed (`silent_failure`)
+- Inventory lookup returns `None` silently
+- Final crash: `AttributeError: 'NoneType' has no attribute 'quantity'` (the *symptom*)
+
+**Patterns detected:** `silent_failure`
+**Context captured:** 16 operations + 3 swallowed exceptions
+
+| Step | Time |
+|---|---|
+| Snapshot context chain | `0.4 µs` |
+| Run all pattern matchers | `9.8 µs` |
+| Format human-readable output | `15.3 µs` |
+| **Total diagnosis time** | **`25.6 µs`** |
+
+**Without `because`** — engineer sees:
+```
+AttributeError: 'NoneType' object has no attribute 'quantity'
+  File "app/api/checkout.py", line 84, in process_order
+    total = result.quantity * item.price
+
+[No further context available. Manual log correlation required.]
+```
+
+**With `because`** — attached to the same exception in `26 µs`:
+```
+AttributeError: 'NoneType' object has no attribute 'quantity'
+  File "app/api/checkout.py", line 84, in process_order
+    total = result.quantity * item.price
+
+[because context]
+  Likely cause: A prior exception was caught and not re-raised. The current error may be a downstream consequence.
+    • Caught-and-swallowed: TimeoutError: pool timeout after 30s (db/pool.py:142) attempt 1
+    • Caught-and-swallowed: TimeoutError: pool timeout after 30s (db/pool.py:142) attempt 2
+    • Caught-and-swallowed: TimeoutError: pool timeout after 30s (db/pool.py:142) attempt 3
+    • Swallowed exception content suggests upstream failure: TimeoutError
+  Caught-and-swallowed (3):
+    TimeoutError: pool timeout after 30s (db/pool.py:142) attempt 1
+    TimeoutError: pool timeout after 30s (db/pool.py:142) attempt 2
+    TimeoutError: pool timeout after 30s (db/pool.py:142) attempt 3
+  Recent operations (16):
+    [ok] http_request      5.0ms  GET https://auth.internal/verify  
+    [ok] db_query          5.0ms  SELECT * FROM users WHERE id=$1
+    [ok] http_request      5.0ms  GET https://catalog.internal/items  
+    [ok] db_query          5.0ms  SELECT stock FROM inventory WHERE sku=$1
+    [ok] http_request      5.0ms  POST https://payment.internal/charge  
+    [FAIL] http_request      5.0ms  POST https://payment.internal/charge  error=ReadTimeout: timed out
+    [FAIL] http_request      5.0ms  POST https://payment.internal/charge  error=ReadTimeout: timed out
+    [FAIL] http_request      5.0ms  POST https://payment.internal/charge  error=ReadTimeout: timed out
+    [FAIL] http_request      5.0ms  POST https://payment.internal/charge  error=ReadTimeout: timed out
+    [FAIL] http_request      5.0ms  POST https://payment.internal/charge  error=ReadTimeout: timed out
+    [FAIL] db_query          5.0ms  BEGIN  error=TimeoutError: pool timeout after 30s
+    [FAIL] db_query          5.0ms  BEGIN  error=TimeoutError: pool timeout after 30s
+    [FAIL] db_query          5.0ms  BEGIN  error=TimeoutError: pool timeout after 30s
+    [FAIL] db_query          5.0ms  SELECT quantity FROM inventory WHERE sku=$1  error=OperationalError: server closed the connection unexpectedly
+    [FAIL] db_query          5.0ms  UPDATE orders SET status='pending' WHERE id=$1  error=OperationalError: connection refused
+    [ok] http_request      5.0ms  GET https://catalog.internal/items/qty  200
+```
+<!-- BENCHMARK_RESULTS_END -->
+
 ## Before and after
 
 **Before `because`:**
