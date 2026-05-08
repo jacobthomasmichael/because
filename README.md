@@ -533,4 +533,4 @@ python examples/llm_explainer.py
 ## Roadmap
 
 - **v1.0** — Cross-process / cross-service causal reasoning
-- Node.js / TypeScript port
+- ✅ Node.js port — [`@jacobthomasmichael/because-js`](https://www.npmjs.com/package/@jacobthomasmichael/because-js) — shipped
